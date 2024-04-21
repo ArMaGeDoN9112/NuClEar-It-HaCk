@@ -1,0 +1,95 @@
+import json
+import os
+import time
+import subprocess
+
+from typing import Dict
+from flask import Flask, request, jsonify, render_template, send_file, Response
+from flask_sock import Sock
+from hashlib import sha256
+
+import fer
+
+app = Flask(__name__)
+sock = Sock(app)
+
+
+@app.route('/<lng>')
+def index(lng):
+    # template_lang = request.args.get("template_color") == 'black'
+    return render_template('index.html', lang=lng)
+
+@app.route('/')
+def index_ru():
+    # template_lang = request.args.get("template_color") == 'black'
+    return render_template('index.html', lang='ru')
+
+# @app.route('/en')
+# def lang_en():
+#     return render_template('index.html', lang='en')
+#
+# @app.route('/ru')
+# def lang_ru():
+#     return render_template('index.html', lang='ru')
+#
+# @app.route('/zh')
+# def lang_zh():
+#     return render_template('index.html', lang='zh')
+
+
+@app.route("/api/upload-file", methods=["POST"])
+def upload_file():
+    file = request.files.get("file")
+    ext = file.filename.split(".")[1]
+
+    key = sha256(time.time().hex().encode()).hexdigest()
+    file.save(f"audio/_{key}.{ext}")
+    subprocess.Popen(f"ffmpeg -i audio/_{key}.{ext} -ar 16000 -ac 1 -acodec pcm_s16le audio/{key}.wav".split(),
+                     stdout=subprocess.PIPE).wait()
+
+    return jsonify({"key": key}), 200
+
+
+def gen(camera):
+    while True:
+        frame = camera.get_video()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
+
+
+@app.route('/api/video-feed/<key>')
+def video_feed(key):
+    file_name = f"audio/{key}.mp4"
+    return Response(gen(fer.VideoCamera(file_name)),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@sock.route("/api/analyze")
+def start_analyze(sock):
+    key = sock.receive()
+    if not os.path.isfile(f"audio/{key}.wav"):
+        sock.send(json.dumps({"result": "WRONG"}))
+        return
+
+    sock.send(json.dumps({"result": "OK"}))
+    proc = subprocess.Popen(["python", "analyze.py", f"{key}.wav"], stdout=subprocess.PIPE)
+
+    while True:
+        # for i in range(1000):
+        #     sock.send(json.dumps({"result": "OK", "string": "ASaD@1"}, ensure_ascii=False))
+        s = proc.stdout.readline().decode().replace("\n", "")
+
+        if not s and proc.poll() is not None:
+            proc.terminate()
+            subprocess.Popen(["rm", "-rf", f"audio/{key}"])
+            sock.send(json.dumps({"result": "END"}))
+            return
+
+        if not s:
+            continue
+
+        sock.send(json.dumps({"result": "OK", "string": s}, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+        app.run("0.0.0.0", 8000, debug=True)
