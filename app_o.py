@@ -72,7 +72,7 @@ def start_analyze(sock):
         return
 
     sock.send(json.dumps({"result": "OK"}))
-    proc = subprocess.Popen(["python", "analyze.py", f"{key}.wav"], stdout=subprocess.PIPE)
+    proc = subprocess.Popen(["python3", "analyze.py", f"{key}.wav"], stdout=subprocess.PIPE)
 
     while True:
         # for i in range(1000):
@@ -92,4 +92,4 @@ def start_analyze(sock):
 
 
 if __name__ == '__main__':
-        app.run("0.0.0.0", 8000, debug=True)
+        app.run("localhost", 8000, debug=True)

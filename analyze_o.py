@@ -89,6 +89,7 @@ def make_predict(file_name, start, end):
     cut = SplitWavAudioMubin(folder, file_name)
     cut.single_split(start, end, file)
 
+
     subprocess.Popen(
         f"ffmpeg -i audio/{file} -ar 16000 -ac 1 -acodec pcm_s16le audio/F{file}".split(),
         stdout=subprocess.PIPE,
